@@ -18,7 +18,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from utils.api_key_manager import ApiKeyManager, ApiKeyInfo, get_api_key_manager, initialize_api_key_manager
+from src.utils.api_key_manager import ApiKeyManager, ApiKeyInfo, get_api_key_manager, initialize_api_key_manager
 
 
 class TestApiKeyManager(unittest.TestCase):
@@ -35,7 +35,7 @@ class TestApiKeyManager(unittest.TestCase):
         self.mock_settings.log_file = self.log_file
         
         # Patch the settings module
-        self.settings_patcher = patch('utils.api_key_manager.get_settings')
+        self.settings_patcher = patch('src.utils.api_key_manager.get_settings')
         self.mock_get_settings = self.settings_patcher.start()
         self.mock_get_settings.return_value = self.mock_settings
         
@@ -406,14 +406,14 @@ class TestGlobalFunctions(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures"""
         # Clear global instance
-        import utils.api_key_manager
-        utils.api_key_manager._api_key_manager = None
+        import src.utils.api_key_manager
+        src.utils.api_key_manager._api_key_manager = None
     
     def tearDown(self):
         """Clean up after tests"""
         # Clear global instance
-        import utils.api_key_manager
-        utils.api_key_manager._api_key_manager = None
+        import src.utils.api_key_manager
+        src.utils.api_key_manager._api_key_manager = None
     
     def test_get_api_key_manager(self):
         """Test getting global API key manager instance"""

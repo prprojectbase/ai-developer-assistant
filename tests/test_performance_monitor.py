@@ -21,25 +21,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from utils.performance_monitor import PerformanceMonitor, PerformanceMetric, PerformanceAlert
 
 
-class TestPerformanceMonitor(unittest.TestCase):
+class TestPerformanceMonitor(unittest.IsolatedAsyncioTestCase):
     """Test cases for PerformanceMonitor class"""
     
-    def setUp(self):
+    async def asyncSetUp(self):
         """Set up test fixtures"""
         self.monitor = PerformanceMonitor()
-        
-    def tearDown(self):
-        """Clean up after tests"""
-        if self.monitor.is_monitoring:
-            asyncio.run(self.monitor.stop_monitoring())
-    
-    async def async_setUp(self):
-        """Async set up for tests that need it"""
         await self.monitor.initialize()
         
-    async def async_tear_down(self):
-        """Async tear down for tests that need it"""
-        await self.monitor.stop_monitoring()
+    async def asyncTearDown(self):
+        """Clean up after tests"""
+        if self.monitor.is_monitoring:
+            await self.monitor.stop_monitoring()
     
     def test_initialization(self):
         """Test performance monitor initialization"""
@@ -50,8 +43,6 @@ class TestPerformanceMonitor(unittest.TestCase):
     
     async def test_start_stop_monitoring(self):
         """Test starting and stopping monitoring"""
-        await self.async_setUp()
-        
         # Test starting monitoring
         await self.monitor.start_monitoring()
         self.assertTrue(self.monitor.is_monitoring)
@@ -60,13 +51,9 @@ class TestPerformanceMonitor(unittest.TestCase):
         # Test stopping monitoring
         await self.monitor.stop_monitoring()
         self.assertFalse(self.monitor.is_monitoring)
-        
-        await self.async_tear_down()
     
     async def test_record_metric(self):
         """Test recording performance metrics"""
-        await self.async_setUp()
-        
         # Record a simple metric
         await self.monitor.record_metric("test_metric", 42.0, "units")
         
@@ -80,11 +67,9 @@ class TestPerformanceMonitor(unittest.TestCase):
         self.assertEqual(metric.unit, "units")
         self.assertIsInstance(metric.timestamp, datetime)
         
-        await self.async_tear_down()
     
     async def test_get_metrics(self):
         """Test retrieving metrics"""
-        await self.async_setUp()
         
         # Record multiple metrics
         await self.monitor.record_metric("cpu_usage", 50.0, "%")
@@ -104,11 +89,9 @@ class TestPerformanceMonitor(unittest.TestCase):
         self.assertEqual(len(cpu_metrics["cpu_usage"]), 2)
         self.assertNotIn("memory_usage", cpu_metrics)
         
-        await self.async_tear_down()
     
     async def test_get_current_metrics(self):
         """Test getting current metric values"""
-        await self.async_setUp()
         
         # Record metrics
         await self.monitor.record_metric("test_metric", 100.0, "units")
@@ -121,11 +104,9 @@ class TestPerformanceMonitor(unittest.TestCase):
         self.assertEqual(current["test_metric"]["value"], 200.0)  # Should be latest value
         self.assertEqual(current["test_metric"]["unit"], "units")
         
-        await self.async_tear_down()
     
     async def test_alert_creation(self):
         """Test alert creation based on thresholds"""
-        await self.async_setUp()
         
         # Set up alert callback
         alerts_received = []
@@ -151,11 +132,9 @@ class TestPerformanceMonitor(unittest.TestCase):
         self.assertEqual(len(alerts_received), 2)
         self.assertEqual(alerts_received[1].severity, "critical")
         
-        await self.async_tear_down()
     
     async def test_alert_resolution(self):
         """Test alert resolution"""
-        await self.async_setUp()
         
         # Create an alert
         alert = PerformanceAlert(
@@ -175,11 +154,9 @@ class TestPerformanceMonitor(unittest.TestCase):
         success = await self.monitor.resolve_alert("nonexistent")
         self.assertFalse(success)
         
-        await self.async_tear_down()
     
     async def test_get_alerts(self):
         """Test retrieving alerts"""
-        await self.async_setUp()
         
         # Create alerts
         alert1 = PerformanceAlert(
@@ -212,11 +189,9 @@ class TestPerformanceMonitor(unittest.TestCase):
         self.assertEqual(len(resolved_alerts), 1)
         self.assertEqual(resolved_alerts[0]["id"], "alert2")
         
-        await self.async_tear_down()
     
     async def test_threshold_management(self):
         """Test threshold setting and management"""
-        await self.async_setUp()
         
         # Set custom thresholds
         self.monitor.set_threshold("custom_metric", warning=50.0, critical=80.0)
@@ -230,11 +205,9 @@ class TestPerformanceMonitor(unittest.TestCase):
         self.assertEqual(self.monitor.thresholds["custom_metric"]["warning"], 60.0)
         self.assertEqual(self.monitor.thresholds["custom_metric"]["critical"], 80.0)
         
-        await self.async_tear_down()
     
     async def test_performance_summary(self):
         """Test performance summary generation"""
-        await self.async_setUp()
         
         # Record some metrics
         await self.monitor.record_metric("cpu_usage", 45.0, "%")
@@ -265,11 +238,9 @@ class TestPerformanceMonitor(unittest.TestCase):
         # Check active alerts count
         self.assertEqual(summary["active_alerts"], 1)
         
-        await self.async_tear_down()
     
     async def test_module_collector_registration(self):
         """Test registering module statistics collectors"""
-        await self.async_setUp()
         
         # Create a mock collector
         mock_collector = AsyncMock(return_value={
@@ -289,11 +260,9 @@ class TestPerformanceMonitor(unittest.TestCase):
         self.assertIn("test_module_stat1", self.monitor.metrics)
         self.assertIn("test_module_stat2", self.monitor.metrics)
         
-        await self.async_tear_down()
     
     async def test_metric_history(self):
         """Test metric history tracking"""
-        await self.async_setUp()
         
         # Record multiple values for the same metric
         values = [10.0, 20.0, 30.0, 40.0, 50.0]
@@ -311,11 +280,9 @@ class TestPerformanceMonitor(unittest.TestCase):
         self.assertEqual(len(limited_history), 3)
         self.assertEqual(limited_history, values[-3:])
         
-        await self.async_tear_down()
     
     async def test_export_metrics(self):
         """Test exporting metrics to JSON"""
-        await self.async_setUp()
         
         # Record some metrics and create alerts
         await self.monitor.record_metric("cpu_usage", 50.0, "%")
@@ -349,11 +316,12 @@ class TestPerformanceMonitor(unittest.TestCase):
         self.assertEqual(len(parsed["alerts"]), 1)
         self.assertEqual(parsed["alerts"][0]["id"], "export_test")
         
-        await self.async_tear_down()
     
     async def test_cleanup_old_data(self):
         """Test cleanup of old metrics and alerts"""
-        await self.async_setUp()
+        
+        # Clear existing alerts first
+        self.monitor.alerts.clear()
         
         # Set small limits for testing
         self.monitor.max_metrics_per_key = 3
@@ -363,14 +331,17 @@ class TestPerformanceMonitor(unittest.TestCase):
         for i in range(10):
             await self.monitor.record_metric("cleanup_test", float(i), "units")
         
-        # Create many alerts
+        # Create many alerts (mark some as resolved to test cleanup)
         for i in range(5):
             alert = PerformanceAlert(
                 id=f"alert_{i}",
                 metric_name="test",
                 message=f"Alert {i}",
-                severity="info"
+                severity="info",
+                resolved=True  # Mark as resolved so they can be cleaned up
             )
+            # Make some alerts older than 1 hour to ensure they get cleaned up
+            alert.timestamp = datetime.now() - timedelta(hours=2)
             self.monitor.alerts.append(alert)
         
         # Run cleanup
@@ -380,14 +351,12 @@ class TestPerformanceMonitor(unittest.TestCase):
         self.assertLessEqual(len(self.monitor.metrics["cleanup_test"]), 3)
         self.assertLessEqual(len(self.monitor.alerts), 2)
         
-        await self.async_tear_down()
     
     @patch('psutil.cpu_percent')
     @patch('psutil.virtual_memory')
     @patch('psutil.disk_usage')
     async def test_system_metrics_collection(self, mock_disk, mock_memory, mock_cpu):
         """Test system metrics collection"""
-        await self.async_setUp()
         
         # Mock psutil responses
         mock_cpu.return_value = 45.5
@@ -407,7 +376,6 @@ class TestPerformanceMonitor(unittest.TestCase):
         self.assertEqual(self.monitor.metrics["memory_usage"][-1].value, 67.8)
         self.assertEqual(self.monitor.metrics["disk_usage"][-1].value, 82.1)
         
-        await self.async_tear_down()
     
     def test_unit_inference(self):
         """Test unit inference from metric names"""

@@ -218,9 +218,6 @@ class MonitoringObservabilitySystem:
         # Start background tasks
         await self._start_background_tasks()
         
-        # Initialize exporters
-        await self._initialize_exporters()
-        
         # Setup default health checks
         await self._setup_default_health_checks()
         
@@ -1049,11 +1046,16 @@ class MonitoringObservabilitySystem:
             "app_active_connections"
         )
     
-    async def _initialize_exporters(self) -> None:
+    async def _initialize_exporters(self) -> Dict[str, Any]:
         """Initialize metric exporters"""
-        # In a real implementation, this would initialize various exporters
-        # like Prometheus, Graphite, InfluxDB, etc.
-        pass
+        return {
+            "file": self._export_to_file,
+            "console": self._export_to_console,
+            "http": self._export_to_http,
+            "database": self._export_to_database,
+            "prometheus": self._export_to_prometheus,
+            "json": self._export_to_json
+        }
     
     async def _setup_default_health_checks(self) -> None:
         """Setup default health checks"""
@@ -1406,3 +1408,129 @@ class MonitoringObservabilitySystem:
             "recent_logs": len([log for log in self.logs if (datetime.now() - log.timestamp).total_seconds() < 3600]),
             "uptime": (datetime.now() - min([trace.start_time for trace in self.traces.values()], default=datetime.now())).total_seconds() if self.traces else 0
         }
+    
+    async def _export_to_file(self, filepath: str, format_type: str = "json") -> None:
+        """Export metrics to file"""
+        try:
+            export_data = await self.export_metrics(format_type)
+            
+            # Create directory if it doesn't exist
+            Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(filepath, 'w') as f:
+                if format_type == "json":
+                    json.dump(export_data, f, indent=2)
+                else:
+                    f.write(str(export_data))
+            
+            self.statistics["export_operations"] += 1
+            self.logger.info(f"Metrics exported to file: {filepath}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to export metrics to file: {e}")
+    
+    async def _export_to_console(self, format_type: str = "json") -> None:
+        """Export metrics to console"""
+        try:
+            export_data = await self.export_metrics(format_type)
+            
+            if format_type == "json":
+                print(json.dumps(export_data, indent=2))
+            else:
+                print(export_data)
+            
+            self.statistics["export_operations"] += 1
+            self.logger.info("Metrics exported to console")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to export metrics to console: {e}")
+    
+    async def _export_to_http(self, url: str, format_type: str = "json", headers: Optional[Dict[str, str]] = None) -> None:
+        """Export metrics to HTTP endpoint"""
+        try:
+            import aiohttp
+            
+            export_data = await self.export_metrics(format_type)
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url,
+                    json=export_data if format_type == "json" else {"data": str(export_data)},
+                    headers=headers or {}
+                ) as response:
+                    if response.status == 200:
+                        self.statistics["export_operations"] += 1
+                        self.logger.info(f"Metrics exported to HTTP: {url}")
+                    else:
+                        self.logger.error(f"HTTP export failed with status: {response.status}")
+                        
+        except Exception as e:
+            self.logger.error(f"Failed to export metrics to HTTP: {e}")
+    
+    async def _export_to_database(self, connection_string: str, table_name: str = "metrics") -> None:
+        """Export metrics to database"""
+        try:
+            # This would typically use a database driver like asyncpg, aiomysql, etc.
+            # For now, we'll simulate the export
+            export_data = await self.export_metrics("json")
+            
+            # Simulate database insertion
+            self.logger.info(f"Simulating database export to table: {table_name}")
+            self.logger.debug(f"Export data: {len(export_data['metrics'])} metrics")
+            
+            self.statistics["export_operations"] += 1
+            self.logger.info("Metrics exported to database")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to export metrics to database: {e}")
+    
+    async def _export_to_prometheus(self, endpoint: str = "/metrics", port: int = 9090) -> None:
+        """Export metrics in Prometheus format"""
+        try:
+            prometheus_data = []
+            
+            # Convert metrics to Prometheus format
+            for metric_name, metric_list in self.metrics.items():
+                if metric_list:
+                    latest_metric = metric_list[-1]
+                    
+                    # Sanitize metric name for Prometheus
+                    sanitized_name = re.sub(r'[^a-zA-Z0-9_]', '_', metric_name)
+                    
+                    # Create Prometheus metric line
+                    tags_str = ",".join([f'{k}="{v}"' for k, v in latest_metric.tags.items()])
+                    metric_line = f"{sanitized_name}{f'{{{tags_str}}}' if tags_str else ''} {latest_metric.value} {int(latest_metric.timestamp.timestamp() * 1000)}"
+                    prometheus_data.append(metric_line)
+            
+            prometheus_output = "\n".join(prometheus_data)
+            
+            # In a real implementation, this would expose the metrics on a Prometheus endpoint
+            self.logger.info(f"Prometheus metrics prepared ({len(prometheus_data)} metrics)")
+            self.logger.debug(f"Prometheus data: {prometheus_output[:200]}...")
+            
+            self.statistics["export_operations"] += 1
+            
+        except Exception as e:
+            self.logger.error(f"Failed to export metrics to Prometheus: {e}")
+    
+    async def _export_to_json(self, filepath: Optional[str] = None, pretty: bool = True) -> str:
+        """Export metrics to JSON format"""
+        try:
+            export_data = await self.export_metrics("json")
+            
+            if pretty:
+                json_output = json.dumps(export_data, indent=2)
+            else:
+                json_output = json.dumps(export_data)
+            
+            if filepath:
+                with open(filepath, 'w') as f:
+                    f.write(json_output)
+                self.statistics["export_operations"] += 1
+                self.logger.info(f"Metrics exported to JSON file: {filepath}")
+            
+            return json_output
+            
+        except Exception as e:
+            self.logger.error(f"Failed to export metrics to JSON: {e}")
+            return "{}"

@@ -1517,3 +1517,262 @@ class IntegrationComplexityManager:
                 ]
             }
         }
+    async def stop(self) -> None:
+        """Stop the integration complexity manager"""
+        self.logger.info("Stopping Integration Complexity Manager...")
+        
+        # Save current state
+        await self._save_integration_state()
+        
+        # Clear resources
+        self.integrations.clear()
+        self.dependencies.clear()
+        self.risks.clear()
+        self.tests.clear()
+        self.integration_graph.clear()
+        
+        # Save historical data
+        await self._save_historical_data()
+        
+        self.logger.info("Integration Complexity Manager stopped")
+    
+    async def _save_integration_state(self) -> None:
+        """Save current integration state to persistent storage"""
+        try:
+            state = {
+                "integrations": {
+                    integration_id: {
+                        "id": integration.id,
+                        "name": integration.name,
+                        "type": integration.type.value,
+                        "source_system": integration.source_system,
+                        "target_system": integration.target_system,
+                        "description": integration.description,
+                        "protocol": integration.protocol,
+                        "data_format": integration.data_format,
+                        "complexity_level": integration.complexity_level.value,
+                        "status": integration.status.value,
+                        "dependencies": integration.dependencies,
+                        "risk_factors": integration.risk_factors,
+                        "created_at": integration.created_at.isoformat(),
+                        "updated_at": integration.updated_at.isoformat(),
+                        "metadata": integration.metadata
+                    }
+                    for integration_id, integration in self.integrations.items()
+                },
+                "dependencies": [
+                    {
+                        "source_integration": dep.source_integration,
+                        "target_integration": dep.target_integration,
+                        "dependency_type": dep.dependency_type,
+                        "strength": dep.strength,
+                        "description": dep.description,
+                        "critical_path": dep.critical_path
+                    }
+                    for dep in self.dependencies
+                ],
+                "risks": [
+                    {
+                        "id": risk.id,
+                        "integration_id": risk.integration_id,
+                        "risk_type": risk.risk_type,
+                        "severity": risk.severity,
+                        "probability": risk.probability,
+                        "impact": risk.impact,
+                        "mitigation_strategy": risk.mitigation_strategy,
+                        "detected_at": risk.detected_at.isoformat()
+                    }
+                    for risk in self.risks
+                ],
+                "metrics": self.complexity_metrics,
+                "saved_at": datetime.now().isoformat()
+            }
+            
+            # Save to file
+            save_path = Path(self.settings.workspace_dir) / "integration_state.json"
+            with open(save_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2, ensure_ascii=False)
+                
+            self.logger.info(f"Integration state saved to {save_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Error saving integration state: {e}")
+    
+    async def _save_historical_data(self) -> None:
+        """Save historical performance data"""
+        try:
+            historical_data = {
+                "timestamp": datetime.now().isoformat(),
+                "metrics": self.complexity_metrics,
+                "integration_count": len(self.integrations),
+                "risk_count": len(self.risks),
+                "test_count": len(self.tests)
+            }
+            
+            # Append to historical data
+            if "integration_complexity" not in self.historical_performance:
+                self.historical_performance["integration_complexity"] = []
+            
+            self.historical_performance["integration_complexity"].append(historical_data)
+            
+            # Keep only last 1000 entries
+            if len(self.historical_performance["integration_complexity"]) > 1000:
+                self.historical_performance["integration_complexity"] = self.historical_performance["integration_complexity"][-1000:]
+            
+            # Save to file
+            save_path = Path(self.settings.workspace_dir) / "integration_history.json"
+            with open(save_path, "w", encoding="utf-8") as f:
+                json.dump(self.historical_performance, f, indent=2, ensure_ascii=False)
+                
+            self.logger.info(f"Historical data saved to {save_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Error saving historical data: {e}")
+    
+    async def get_integration_health_report(self) -> Dict[str, Any]:
+        """Get comprehensive integration health report"""
+        try:
+            # Calculate health metrics
+            health_metrics = await self._calculate_health_metrics()
+            
+            # Generate health recommendations
+            health_recommendations = await self._generate_health_recommendations(health_metrics)
+            
+            return {
+                "success": True,
+                "health_report": {
+                    "overall_health": health_metrics["overall_health"],
+                    "health_score": health_metrics["health_score"],
+                    "critical_issues": health_metrics["critical_issues"],
+                    "warnings": health_metrics["warnings"],
+                    "healthy_integrations": health_metrics["healthy_integrations"],
+                    "at_risk_integrations": health_metrics["at_risk_integrations"],
+                    "failed_integrations": health_metrics["failed_integrations"],
+                    "health_trends": health_metrics["health_trends"],
+                    "recommendations": health_recommendations,
+                    "generated_at": datetime.now().isoformat()
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error generating health report: {e}")
+            return {"error": str(e)}
+    
+    async def _calculate_health_metrics(self) -> Dict[str, Any]:
+        """Calculate integration health metrics"""
+        try:
+            # Count integrations by status
+            status_counts = {}
+            for status in IntegrationStatus:
+                status_counts[status.value] = len([i for i in self.integrations.values() if i.status == status])
+            
+            # Calculate health score
+            total_integrations = len(self.integrations)
+            if total_integrations == 0:
+                health_score = 100
+            else:
+                healthy_count = status_counts.get("deployed", 0) + status_counts.get("testing", 0)
+                at_risk_count = status_counts.get("in_development", 0) + status_counts.get("planned", 0)
+                failed_count = status_counts.get("failed", 0) + status_counts.get("deprecated", 0)
+                
+                health_score = (healthy_count / total_integrations) * 100 - (failed_count / total_integrations) * 50
+            
+            # Determine overall health
+            if health_score >= 90:
+                overall_health = "excellent"
+            elif health_score >= 75:
+                overall_health = "good"
+            elif health_score >= 60:
+                overall_health = "fair"
+            else:
+                overall_health = "poor"
+            
+            # Identify critical issues
+            critical_issues = []
+            for integration in self.integrations.values():
+                if integration.status == IntegrationStatus.FAILED:
+                    critical_issues.append({
+                        "integration_id": integration.id,
+                        "integration_name": integration.name,
+                        "issue": "Integration failed",
+                        "severity": "critical"
+                    })
+                elif integration.complexity_level == ComplexityLevel.CRITICAL and integration.status != IntegrationStatus.DEPLOYED:
+                    critical_issues.append({
+                        "integration_id": integration.id,
+                        "integration_name": integration.name,
+                        "issue": "Critical complexity integration not deployed",
+                        "severity": "high"
+                    })
+            
+            # Calculate trends
+            trends = {}
+            if "integration_complexity" in self.historical_performance and len(self.historical_performance["integration_complexity"]) > 1:
+                recent_data = self.historical_performance["integration_complexity"][-10:]  # Last 10 entries
+                if len(recent_data) >= 2:
+                    old_score = recent_data[0]["metrics"].get("health_score", 75) if "metrics" in recent_data[0] else 75
+                    new_score = recent_data[-1]["metrics"].get("health_score", health_score) if "metrics" in recent_data[-1] else health_score
+                    
+                    if new_score > old_score:
+                        trends["health_score"] = "improving"
+                    elif new_score < old_score:
+                        trends["health_score"] = "declining"
+                    else:
+                        trends["health_score"] = "stable"
+            
+            return {
+                "overall_health": overall_health,
+                "health_score": round(health_score, 2),
+                "critical_issues": critical_issues,
+                "warnings": [r for r in self.risks if r.severity in ["high", "critical"]],
+                "healthy_integrations": status_counts.get("deployed", 0),
+                "at_risk_integrations": status_counts.get("in_development", 0) + status_counts.get("planned", 0),
+                "failed_integrations": status_counts.get("failed", 0),
+                "health_trends": trends
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating health metrics: {e}")
+            return {"overall_health": "unknown", "health_score": 0}
+    
+    async def _generate_health_recommendations(self, health_metrics: Dict[str, Any]) -> List[str]:
+        """Generate health improvement recommendations"""
+        recommendations = []
+        
+        try:
+            # Overall health recommendations
+            if health_metrics["overall_health"] == "poor":
+                recommendations.append("Critical: Overall integration health is poor. Immediate attention required.")
+            elif health_metrics["overall_health"] == "fair":
+                recommendations.append("Warning: Integration health is fair. Consider improvements.")
+            
+            # Critical issues recommendations
+            if health_metrics["critical_issues"]:
+                recommendations.append(f"Address {len(health_metrics[\"critical_issues\"])} critical integration issues immediately.")
+            
+            # Failed integrations
+            if health_metrics["failed_integrations"] > 0:
+                recommendations.append(f"Fix {health_metrics[\"failed_integrations\"]} failed integrations.")
+            
+            # At-risk integrations
+            if health_metrics["at_risk_integrations"] > 0:
+                recommendations.append(f"Monitor and complete {health_metrics[\"at_risk_integrations\"]} at-risk integrations.")
+            
+            # Health trends
+            if health_metrics["health_trends"].get("health_score") == "declining":
+                recommendations.append("Health score is declining. Investigate root causes.")
+            
+            # Test coverage
+            if self.complexity_metrics["test_coverage"] < 70:
+                recommendations.append("Increase test coverage for better integration reliability.")
+            
+            # Risk management
+            if health_metrics["warnings"]:
+                recommendations.append(f"Address {len(health_metrics[\"warnings\"])} high-priority risks.")
+            
+            return recommendations
+            
+        except Exception as e:
+            self.logger.error(f"Error generating health recommendations: {e}")
+            return ["Error generating recommendations"]
+

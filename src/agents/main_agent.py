@@ -12,18 +12,8 @@ from ..modules.task_manager import TaskManager
 from ..modules.playwright_integration import PlaywrightIntegration
 from ..modules.openrouter_integration import OpenRouterAPI
 from ..agents.communication_agent import CommunicationAgent
+from ..agents.message_types import AgentMessage
 from ..utils.performance_monitor import PerformanceMonitor
-
-
-@dataclass
-class AgentMessage:
-    """Message structure for agent communication"""
-    sender: str
-    recipient: str
-    message_type: str
-    content: Dict[str, Any]
-    timestamp: datetime = field(default_factory=datetime.now)
-    message_id: Optional[str] = None
 
 
 class AIDeveloperAssistant:

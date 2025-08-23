@@ -16,6 +16,11 @@ psutil>=5.9.0
 watchdog>=3.0.0
 cryptography>=41.0.0
 
+# Integration complexity dependencies
+networkx>=3.1
+matplotlib>=3.7.0
+plotly>=5.15.0
+
 # Database dependencies
 asyncpg>=0.28.0
 aiomysql>=0.1.1

@@ -42,13 +42,12 @@ if __name__ == "__main__":
     @pytest.mark.asyncio
     async def test_initialize(self, file_ops):
         """Test FileOperations initialization"""
-        with patch('src.modules.file_operations.logging.getLogger') as mock_logger:
-            mock_logger.return_value = Mock()
-            
+        # Patch the logger directly on the instance
+        with patch.object(file_ops, 'logger') as mock_logger:
             await file_ops.initialize()
             
             assert file_ops.workspace_dir.exists()
-            mock_logger.return_value.info.assert_called()
+            mock_logger.info.assert_called()
     
     @pytest.mark.asyncio
     async def test_write_and_read_file(self, file_ops, sample_content):

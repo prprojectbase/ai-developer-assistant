@@ -6,7 +6,7 @@ import re
 import shlex
 import os
 import subprocess
-from typing import List, Set, Optional, Tuple
+from typing import List, Set, Optional, Tuple, Dict, Any
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
@@ -284,7 +284,7 @@ class TerminalSecurityManager:
             return True
         return False
     
-    def check_command_safety(self, command: str) -> Dict[str, any]:
+    def check_command_safety(self, command: str) -> Dict[str, Any]:
         """Comprehensive command safety check"""
         is_valid, message, risk_level = self.validate_command(command)
         

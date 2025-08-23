@@ -10,7 +10,7 @@ import aiofiles
 import os
 
 from ..config.settings import get_settings
-from ..agents.main_agent import AgentMessage
+from ..agents.message_types import AgentMessage
 from ..utils.auth import auth_manager, WebSocketAuthMiddleware
 
 
