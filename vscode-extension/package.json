@@ -1,0 +1,184 @@
+{
+  "name": "ai-developer-assistant",
+  "displayName": "AI Developer Assistant",
+  "description": "VS Code extension for AI Developer Assistant integration",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other",
+    "Programming Languages",
+    "Machine Learning"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "typescript": "^4.9.4"
+  },
+  "dependencies": {
+    "ws": "^8.13.0"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "ai-assistant.start",
+        "title": "AI Assistant: Start Assistant",
+        "icon": "$(robot)"
+      },
+      {
+        "command": "ai-assistant.stop",
+        "title": "AI Assistant: Stop Assistant",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "ai-assistant.generateCode",
+        "title": "AI Assistant: Generate Code",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "ai-assistant.analyzeCode",
+        "title": "AI Assistant: Analyze Code",
+        "icon": "$(search)"
+      },
+      {
+        "command": "ai-assistant.debugCode",
+        "title": "AI Assistant: Debug Code",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "ai-assistant.explainCode",
+        "title": "AI Assistant: Explain Code",
+        "icon": "$(question)"
+      },
+      {
+        "command": "ai-assistant.createTask",
+        "title": "AI Assistant: Create Task",
+        "icon": "$(tasklist)"
+      },
+      {
+        "command": "ai-assistant.showTasks",
+        "title": "AI Assistant: Show Tasks",
+        "icon": "$(list-flat)"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "ai-assistant.generateCode",
+          "when": "editorHasSelection",
+          "group": "ai-assistant"
+        },
+        {
+          "command": "ai-assistant.analyzeCode",
+          "when": "editorHasSelection",
+          "group": "ai-assistant"
+        },
+        {
+          "command": "ai-assistant.debugCode",
+          "when": "editorHasSelection",
+          "group": "ai-assistant"
+        },
+        {
+          "command": "ai-assistant.explainCode",
+          "when": "editorHasSelection",
+          "group": "ai-assistant"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "ai-assistant.start",
+          "when": "!ai-assistant.active",
+          "group": "navigation"
+        },
+        {
+          "command": "ai-assistant.stop",
+          "when": "ai-assistant.active",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "ai-assistant.start",
+          "when": "!ai-assistant.active"
+        },
+        {
+          "command": "ai-assistant.stop",
+          "when": "ai-assistant.active"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AI Assistant",
+      "properties": {
+        "ai-assistant.host": {
+          "type": "string",
+          "default": "localhost",
+          "description": "Host address for the AI Assistant server"
+        },
+        "ai-assistant.port": {
+          "type": "number",
+          "default": 8081,
+          "description": "Port number for the AI Assistant server"
+        },
+        "ai-assistant.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically start the AI Assistant when VS Code starts"
+        },
+        "ai-assistant.showNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications for AI Assistant events"
+        },
+        "ai-assistant.openRouter.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenRouter API key for AI features"
+        },
+        "ai-assistant.openRouter.model": {
+          "type": "string",
+          "default": "anthropic/claude-3-sonnet",
+          "description": "Default model to use for AI features"
+        }
+      }
+    },
+    "views": {
+      "ai-assistant": [
+        {
+          "id": "ai-assistant.tasks",
+          "name": "Tasks",
+          "when": "ai-assistant.active"
+        },
+        {
+          "id": "ai-assistant.agents",
+          "name": "Agents",
+          "when": "ai-assistant.active"
+        },
+        {
+          "id": "ai-assistant.messages",
+          "name": "Messages",
+          "when": "ai-assistant.active"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ai-assistant",
+          "title": "AI Assistant",
+          "icon": "$(robot)"
+        }
+      ]
+    }
+  }
+}
