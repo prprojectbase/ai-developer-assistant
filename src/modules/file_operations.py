@@ -9,6 +9,7 @@ import json
 import mimetypes
 
 from ..config.settings import get_settings
+from ..utils.cache import cache_manager, cached
 
 
 class FileOperations:
@@ -26,10 +27,18 @@ class FileOperations:
         # Ensure workspace directory exists
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         
+        # Initialize cache manager
+        await cache_manager.initialize()
+        
         self.logger.info("File Operations module initialized")
     
     async def stop(self) -> None:
         """Stop the file operations module"""
+        self.logger.info("Stopping File Operations module...")
+        
+        # Stop cache manager
+        await cache_manager.stop()
+        
         self.logger.info("File Operations module stopped")
     
     async def execute_operation(self, operation: Dict[str, Any]) -> Dict[str, Any]:
@@ -87,6 +96,14 @@ class FileOperations:
         """Read a file's contents"""
         full_path = self._get_full_path(file_path)
         
+        # Generate cache key
+        cache_key = f"file_read:{full_path}:{full_path.stat().st_mtime if full_path.exists() else 0}"
+        
+        # Try to get from cache first
+        cached_result = await cache_manager.get(cache_key)
+        if cached_result is not None:
+            return cached_result
+        
         if not full_path.exists():
             return {"error": f"File not found: {file_path}"}
         
@@ -102,25 +119,35 @@ class FileOperations:
             async with aiofiles.open(full_path, 'r', encoding='utf-8') as f:
                 content = await f.read()
             
-            return {
+            result = {
                 "success": True,
                 "content": content,
                 "size": file_size,
                 "path": file_path
             }
             
+            # Cache the result (with 5 minute TTL)
+            await cache_manager.set(cache_key, result, ttl=300)
+            
+            return result
+            
         except UnicodeDecodeError:
             # Try reading as binary
             async with aiofiles.open(full_path, 'rb') as f:
                 content = await f.read()
             
-            return {
+            result = {
                 "success": True,
                 "content": content.hex(),  # Return hex representation
                 "size": file_size,
                 "path": file_path,
                 "binary": True
             }
+            
+            # Cache the result (with 5 minute TTL)
+            await cache_manager.set(cache_key, result, ttl=300)
+            
+            return result
     
     async def write_file(self, file_path: str, content: str) -> Dict[str, Any]:
         """Write content to a file"""
@@ -132,6 +159,10 @@ class FileOperations:
         try:
             async with aiofiles.open(full_path, 'w', encoding='utf-8') as f:
                 await f.write(content)
+            
+            # Invalidate cache for this file
+            cache_key = f"file_read:{full_path}:{full_path.stat().st_mtime}"
+            await cache_manager.delete(cache_key)
             
             return {
                 "success": True,
@@ -172,6 +203,14 @@ class FileOperations:
         """List contents of a directory"""
         full_path = self._get_full_path(dir_path)
         
+        # Generate cache key
+        cache_key = f"dir_list:{full_path}"
+        
+        # Try to get from cache first
+        cached_result = await cache_manager.get(cache_key)
+        if cached_result is not None:
+            return cached_result
+        
         if not full_path.exists():
             return {"error": f"Directory not found: {dir_path}"}
         
@@ -191,11 +230,16 @@ class FileOperations:
                     "created": stat.st_ctime
                 })
             
-            return {
+            result = {
                 "success": True,
                 "path": dir_path,
                 "items": sorted(items, key=lambda x: x["name"])
             }
+            
+            # Cache the result (with 1 minute TTL)
+            await cache_manager.set(cache_key, result, ttl=60)
+            
+            return result
             
         except Exception as e:
             return {"error": f"Failed to list directory: {str(e)}"}

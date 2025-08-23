@@ -11,6 +11,7 @@ import os
 
 from ..config.settings import get_settings
 from ..agents.main_agent import AgentMessage
+from ..utils.auth import auth_manager, WebSocketAuthMiddleware
 
 
 class CommunicationAgent:
@@ -23,11 +24,15 @@ class CommunicationAgent:
         # Communication channels
         self.websocket_server = None
         self.connected_clients: Dict[str, WebSocketServerProtocol] = {}
+        self.authenticated_clients: Dict[str, Any] = {}
         self.message_handlers: Dict[str, Callable] = {}
         self.message_history: List[AgentMessage] = []
         
         # Agent registry
         self.registered_agents: Dict[str, Any] = {}
+        
+        # Authentication
+        self.auth_middleware = WebSocketAuthMiddleware(auth_manager)
         
         # Event loop for async operations
         self.event_loop = None
@@ -38,6 +43,10 @@ class CommunicationAgent:
         
         # Get the current event loop
         self.event_loop = asyncio.get_event_loop()
+        
+        # Create authentication tokens for registered agents
+        for agent_id in self.registered_agents:
+            auth_manager.create_token(agent_id)
         
         # Start WebSocket server
         self.websocket_server = await websockets.serve(
@@ -60,6 +69,10 @@ class CommunicationAgent:
                 self.logger.error(f"Error closing client {client_id}: {e}")
         
         self.connected_clients.clear()
+        self.authenticated_clients.clear()
+        
+        # Clean up expired tokens
+        auth_manager.cleanup_expired_tokens()
         
         # Stop WebSocket server
         if self.websocket_server:
@@ -71,13 +84,29 @@ class CommunicationAgent:
     async def register_agent(self, agent_id: str, agent: Any) -> None:
         """Register an agent for communication"""
         self.registered_agents[agent_id] = agent
+        
+        # Create authentication token for the agent
+        auth_manager.create_token(agent_id)
+        
         self.logger.info(f"Registered agent: {agent_id}")
     
     async def unregister_agent(self, agent_id: str) -> None:
         """Unregister an agent"""
         if agent_id in self.registered_agents:
             del self.registered_agents[agent_id]
+            
+            # Revoke all tokens for this agent
+            auth_manager.revoke_agent_tokens(agent_id)
+            
             self.logger.info(f"Unregistered agent: {agent_id}")
+    
+    async def get_agent_token(self, agent_id: str) -> Optional[str]:
+        """Get authentication token for an agent"""
+        tokens = auth_manager.list_agent_tokens(agent_id)
+        if tokens:
+            # Return the most recent token
+            return tokens[-1]["token_id"]
+        return None
     
     async def send_message(self, message: AgentMessage) -> str:
         """Send a message to another agent"""
@@ -158,6 +187,26 @@ class CommunicationAgent:
         self.logger.info(f"Client connected: {client_id}")
         
         try:
+            # Authenticate the connection
+            is_authenticated, auth_token = await self.auth_middleware.authenticate_connection(websocket, path)
+            
+            if not is_authenticated:
+                await self.auth_middleware.send_auth_response(websocket, False)
+                await websocket.close()
+                return
+            
+            # Send successful authentication response
+            await self.auth_middleware.send_auth_response(websocket, True, auth_token)
+            
+            # Store authenticated client
+            self.authenticated_clients[client_id] = {
+                "websocket": websocket,
+                "token": auth_token,
+                "agent_id": auth_token.agent_id
+            }
+            
+            self.logger.info(f"Client authenticated: {client_id} (Agent: {auth_token.agent_id})")
+            
             # Send welcome message
             welcome_message = AgentMessage(
                 sender="system",
@@ -166,6 +215,7 @@ class CommunicationAgent:
                 content={
                     "message": "Connected to AI Developer Assistant",
                     "client_id": client_id,
+                    "agent_id": auth_token.agent_id,
                     "timestamp": datetime.now().isoformat()
                 }
             )
@@ -186,22 +236,41 @@ class CommunicationAgent:
             # Clean up client connection
             if client_id in self.connected_clients:
                 del self.connected_clients[client_id]
+            if client_id in self.authenticated_clients:
+                del self.authenticated_clients[client_id]
             self.logger.info(f"Client connection cleaned up: {client_id}")
     
     async def _handle_client_message(self, client_id: str, message: str) -> None:
         """Handle message from WebSocket client"""
         try:
-            # Parse message
-            message_data = json.loads(message)
+            # Check if client is authenticated
+            if client_id not in self.authenticated_clients:
+                self.logger.warning(f"Unauthenticated client {client_id} attempted to send message")
+                return
             
-            # Create AgentMessage
+            # Parse and verify signed message
+            message_data = json.loads(message)
+            is_valid, auth_token, verified_data = self.auth_middleware.unwrap_message(message_data)
+            
+            if not is_valid:
+                self.logger.warning(f"Invalid signature from client {client_id}")
+                error_response = AgentMessage(
+                    sender="system",
+                    recipient=client_id,
+                    message_type="error",
+                    content={"error": "Invalid message signature"}
+                )
+                await self._send_to_client(self.connected_clients[client_id], error_response)
+                return
+            
+            # Create AgentMessage from verified data
             agent_message = AgentMessage(
-                sender=message_data.get("sender", client_id),
-                recipient=message_data.get("recipient", "system"),
-                message_type=message_data.get("message_type", "unknown"),
-                content=message_data.get("content", {}),
-                timestamp=datetime.fromisoformat(message_data.get("timestamp", datetime.now().isoformat())),
-                message_id=message_data.get("message_id")
+                sender=verified_data.get("sender", client_id),
+                recipient=verified_data.get("recipient", "system"),
+                message_type=verified_data.get("message_type", "unknown"),
+                content=verified_data.get("content", {}),
+                timestamp=datetime.fromisoformat(verified_data.get("timestamp", datetime.now().isoformat())),
+                message_id=verified_data.get("message_id")
             )
             
             self.logger.info(f"Received message from client {client_id}: {agent_message.message_type}")
@@ -353,6 +422,7 @@ class AgentClient:
         self.host = host
         self.port = port
         self.websocket = None
+        self.auth_token = None
         self.message_handlers: Dict[str, Callable] = {}
         self.logger = logging.getLogger(__name__)
     
@@ -362,8 +432,41 @@ class AgentClient:
         self.websocket = await websockets.connect(uri)
         self.logger.info(f"Connected to communication server: {uri}")
         
+        # Authenticate with the server
+        await self._authenticate()
+        
         # Start listening for messages
         asyncio.create_task(self._listen_for_messages())
+    
+    async def _authenticate(self) -> None:
+        """Authenticate with the communication server"""
+        if not self.auth_token:
+            # Generate a new token (in a real scenario, this would be provided by the server)
+            from ..utils.auth import auth_manager
+            token = auth_manager.create_token(self.agent_id)
+            self.auth_token = token.token_id
+        
+        # Send authentication message
+        auth_message = {
+            "type": "auth",
+            "token_id": self.auth_token,
+            "timestamp": int(time.time())
+        }
+        
+        # Sign the authentication message
+        from ..utils.auth import auth_manager
+        signed_auth = auth_manager.create_signed_message(self.auth_token, auth_message)
+        
+        await self.websocket.send(json.dumps(signed_auth))
+        
+        # Wait for authentication response
+        response = await self.websocket.recv()
+        response_data = json.loads(response)
+        
+        if response_data.get("type") == "auth_response" and response_data.get("success"):
+            self.logger.info("Authentication successful")
+        else:
+            raise RuntimeError("Authentication failed")
     
     async def disconnect(self) -> None:
         """Disconnect from the communication server"""
@@ -377,7 +480,11 @@ class AgentClient:
         if not self.websocket:
             raise RuntimeError("Not connected to communication server")
         
-        message_dict = {
+        if not self.auth_token:
+            raise RuntimeError("Not authenticated")
+        
+        # Create message data
+        message_data = {
             "sender": message.sender or self.agent_id,
             "recipient": message.recipient,
             "message_type": message.message_type,
@@ -386,7 +493,11 @@ class AgentClient:
             "message_id": message.message_id
         }
         
-        await self.websocket.send(json.dumps(message_dict))
+        # Sign the message
+        from ..utils.auth import auth_manager
+        signed_message = auth_manager.create_signed_message(self.auth_token, message_data)
+        
+        await self.websocket.send(json.dumps(signed_message))
     
     async def _listen_for_messages(self) -> None:
         """Listen for incoming messages"""

@@ -10,6 +10,7 @@ from pathlib import Path
 import json
 
 from ..config.settings import get_settings
+from ..utils.security import security_manager
 
 
 class TerminalOperations:
@@ -98,6 +99,12 @@ class TerminalOperations:
             elif command_type == "get_working_directory":
                 return await self.get_working_directory()
             
+            elif command_type == "get_security_info":
+                return await self.get_security_info()
+            
+            elif command_type == "validate_command":
+                return await self.validate_command_safety(command["command"])
+            
             else:
                 return {"error": f"Unknown command type: {command_type}"}
                 
@@ -109,6 +116,26 @@ class TerminalOperations:
                          timeout: int = 30, env: Optional[Dict[str, str]] = None,
                          capture_output: bool = True) -> Dict[str, Any]:
         """Run a command and wait for completion"""
+        # Validate command security first
+        security_check = security_manager.check_command_safety(command)
+        
+        if not security_check["is_safe"]:
+            self.logger.warning(f"Command blocked by security policy: {command}")
+            return {
+                "success": False,
+                "command": command,
+                "error": security_check["message"],
+                "security_check": security_check
+            }
+        
+        # Use sanitized command if available
+        final_command = security_check["sanitized_command"] or command
+        
+        # Log security warnings
+        if security_check["warnings"]:
+            for warning in security_check["warnings"]:
+                self.logger.warning(f"Security warning for command '{command}': {warning}")
+        
         working_dir = self._get_working_directory(cwd)
         
         # Prepare environment
@@ -121,12 +148,12 @@ class TerminalOperations:
         
         try:
             # Parse command safely
-            if isinstance(command, str):
-                cmd_args = shlex.split(command)
+            if isinstance(final_command, str):
+                cmd_args = shlex.split(final_command)
             else:
-                cmd_args = command
+                cmd_args = final_command
             
-            self.logger.info(f"Executing command: {command} in {working_dir}")
+            self.logger.info(f"Executing command: {final_command} in {working_dir}")
             
             # Run the command
             process = await asyncio.create_subprocess_exec(
@@ -149,35 +176,61 @@ class TerminalOperations:
                 stdout, stderr = await process.communicate()
                 return {
                     "success": False,
-                    "command": command,
+                    "command": final_command,
+                    "original_command": command,
                     "exit_code": -1,
                     "stdout": stdout,
                     "stderr": stderr,
                     "timeout": True,
-                    "timeout_seconds": timeout
+                    "timeout_seconds": timeout,
+                    "security_check": security_check
                 }
             
             return {
                 "success": process.returncode == 0,
-                "command": command,
+                "command": final_command,
+                "original_command": command,
                 "exit_code": process.returncode,
                 "stdout": stdout,
                 "stderr": stderr,
-                "working_directory": str(working_dir)
+                "working_directory": str(working_dir),
+                "security_check": security_check
             }
             
         except Exception as e:
             return {
                 "success": False,
-                "command": command,
+                "command": final_command,
+                "original_command": command,
                 "error": str(e),
-                "working_directory": str(working_dir)
+                "working_directory": str(working_dir),
+                "security_check": security_check
             }
     
     async def run_interactive_command(self, command: str, cwd: Optional[str] = None,
                                     process_id: Optional[str] = None,
                                     env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """Run an interactive command that can receive input"""
+        # Validate command security first
+        security_check = security_manager.check_command_safety(command)
+        
+        if not security_check["is_safe"]:
+            self.logger.warning(f"Interactive command blocked by security policy: {command}")
+            return {
+                "success": False,
+                "command": command,
+                "error": security_check["message"],
+                "security_check": security_check
+            }
+        
+        # Use sanitized command if available
+        final_command = security_check["sanitized_command"] or command
+        
+        # Log security warnings
+        if security_check["warnings"]:
+            for warning in security_check["warnings"]:
+                self.logger.warning(f"Security warning for interactive command '{command}': {warning}")
+        
         working_dir = self._get_working_directory(cwd)
         
         # Generate process ID if not provided
@@ -193,12 +246,12 @@ class TerminalOperations:
         
         try:
             # Parse command safely
-            if isinstance(command, str):
-                cmd_args = shlex.split(command)
+            if isinstance(final_command, str):
+                cmd_args = shlex.split(final_command)
             else:
-                cmd_args = command
+                cmd_args = final_command
             
-            self.logger.info(f"Starting interactive command: {command} (ID: {process_id})")
+            self.logger.info(f"Starting interactive command: {final_command} (ID: {process_id})")
             
             # Start the process
             process = subprocess.Popen(
@@ -229,17 +282,21 @@ class TerminalOperations:
             return {
                 "success": True,
                 "process_id": process_id,
-                "command": command,
+                "command": final_command,
+                "original_command": command,
                 "working_directory": str(working_dir),
-                "pid": process.pid
+                "pid": process.pid,
+                "security_check": security_check
             }
             
         except Exception as e:
             return {
                 "success": False,
-                "command": command,
+                "command": final_command,
+                "original_command": command,
                 "error": str(e),
-                "working_directory": str(working_dir)
+                "working_directory": str(working_dir),
+                "security_check": security_check
             }
     
     def _collect_process_output(self, process_id: str, process: subprocess.Popen) -> None:
@@ -490,3 +547,29 @@ class TerminalOperations:
             if path.exists() and path.is_dir():
                 return path
         return self.workspace_dir
+    
+    async def get_security_info(self) -> Dict[str, Any]:
+        """Get terminal security information"""
+        return {
+            "success": True,
+            "security": {
+                "statistics": security_manager.get_command_statistics(),
+                "allowed_commands": security_manager.get_allowed_commands(),
+                "settings": {
+                    "sandbox_enabled": security_manager.enable_sandbox,
+                    "max_command_length": security_manager.max_command_length,
+                    "network_commands_blocked": security_manager.block_network_commands,
+                    "file_modification_blocked": security_manager.block_file_modification
+                }
+            }
+        }
+    
+    async def validate_command_safety(self, command: str) -> Dict[str, Any]:
+        """Validate a command's safety without executing it"""
+        security_check = security_manager.check_command_safety(command)
+        
+        return {
+            "success": True,
+            "command": command,
+            "security_check": security_check
+        }

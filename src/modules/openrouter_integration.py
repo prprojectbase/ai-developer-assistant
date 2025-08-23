@@ -55,13 +55,24 @@ class OpenRouterAPI:
         self.settings = get_settings()
         self.logger = logging.getLogger(__name__)
         
-        # API configuration
-        self.api_key = self.settings.openrouter_api_key
+        # API configuration - get API key securely
+        from ..config.settings import get_openrouter_api_key
+        self.api_key = get_openrouter_api_key()
+        if not self.api_key:
+            self.logger.warning("No OpenRouter API key found. Some features may not work.")
+        
         self.base_url = self.settings.openrouter_base_url
         self.default_model = self.settings.openrouter_model
         
-        # HTTP session
+        # HTTP session with connection pooling
         self.session: Optional[aiohttp.ClientSession] = None
+        self.connector: Optional[aiohttp.TCPConnector] = None
+        
+        # Connection pooling settings
+        self.max_connections = 100
+        self.max_per_host = 30
+        self.connection_timeout = 30
+        self.read_timeout = 60
         
         # Rate limiting
         self.request_timestamps: List[float] = []
@@ -73,7 +84,9 @@ class OpenRouterAPI:
             "successful_requests": 0,
             "failed_requests": 0,
             "total_tokens_used": 0,
-            "average_response_time": 0.0
+            "average_response_time": 0.0,
+            "connection_pool_size": 0,
+            "active_connections": 0
         }
         
         # Available models
@@ -83,14 +96,41 @@ class OpenRouterAPI:
         """Initialize the OpenRouter API integration"""
         self.logger.info("Initializing OpenRouter API integration...")
         
-        # Create HTTP session
+        # Check if API key is available
+        if not self.api_key:
+            self.logger.error("No OpenRouter API key available. Cannot initialize API integration.")
+            return
+        
+        # Create connection pool
+        self.connector = aiohttp.TCPConnector(
+            limit=self.max_connections,
+            limit_per_host=self.max_per_host,
+            ttl_dns_cache=300,
+            use_dns_cache=True,
+            keepalive_timeout=30,
+            enable_cleanup_closed=True
+        )
+        
+        # Create HTTP session with connection pooling
+        timeout = aiohttp.ClientTimeout(
+            total=self.read_timeout,
+            connect=self.connection_timeout,
+            sock_read=self.read_timeout
+        )
+        
         self.session = aiohttp.ClientSession(
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "HTTP-Referer": "https://ai-developer-assistant.local",
                 "X-Title": "AI Developer Assistant"
-            }
+            },
+            connector=self.connector,
+            timeout=timeout,
+            trust_env=True
         )
+        
+        # Update connection pool statistics
+        self.stats["connection_pool_size"] = self.max_connections
         
         # Fetch available models
         await self._fetch_available_models()
@@ -105,12 +145,16 @@ class OpenRouterAPI:
         if self.session:
             await self.session.close()
         
+        # Close connection pool
+        if self.connector:
+            await self.connector.close()
+        
         self.logger.info("OpenRouter API integration stopped")
     
     async def chat_completion(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         """Create a chat completion"""
         if not self.session:
-            raise RuntimeError("OpenRouter API not initialized")
+            raise RuntimeError("OpenRouter API not initialized or no API key available")
         
         # Apply rate limiting
         await self._apply_rate_limit()
@@ -296,12 +340,23 @@ class OpenRouterAPI:
     
     async def get_statistics(self) -> Dict[str, Any]:
         """Get API usage statistics"""
+        # Update connection pool statistics
+        if self.connector:
+            self.stats["active_connections"] = len(self.connector._conns)
+        
         return {
             "success": True,
             "statistics": self.stats.copy(),
             "rate_limit_info": {
                 "requests_in_last_minute": len(self.request_timestamps),
                 "max_requests_per_minute": self.max_requests_per_minute
+            },
+            "connection_pool_info": {
+                "max_connections": self.max_connections,
+                "max_per_host": self.max_per_host,
+                "active_connections": self.stats["active_connections"],
+                "connection_timeout": self.connection_timeout,
+                "read_timeout": self.read_timeout
             },
             "available_models_count": len(self.available_models)
         }
