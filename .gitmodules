@@ -1,0 +1,3 @@
+[submodule "ai-developer-assistant"]
+	path = ai-developer-assistant
+	url = https://github.com/prprojectbase/ai-developer-assistant.git
