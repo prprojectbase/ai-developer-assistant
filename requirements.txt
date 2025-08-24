@@ -1,0 +1,59 @@
+openai>=1.0.0
+playwright>=1.40.0
+asyncio>=3.4.3
+websockets>=12.0
+pydantic>=2.0.0
+click>=8.1.0
+rich>=13.0.0
+aiofiles>=23.0.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pyyaml>=6.0.0
+jinja2>=3.1.0
+psutil>=5.9.0
+watchdog>=3.0.0
+cryptography>=41.0.0
+
+# Integration complexity dependencies
+networkx>=3.1
+matplotlib>=3.7.0
+plotly>=5.15.0
+
+# Database dependencies
+asyncpg>=0.28.0
+aiomysql>=0.1.1
+motor>=3.3.1
+
+# API development dependencies
+aiohttp>=3.8.0
+
+# Security testing dependencies
+aiohttp>=3.8.0
+ssl
+
+# Containerization and cloud dependencies
+docker>=6.1.0
+kubernetes>=27.2.0
+
+# Package management dependencies
+aiohttp>=3.8.0
+
+# Additional utilities
+tempfile
+os
+pathlib
+datetime
+uuid
+hashlib
+re
+subprocess
+json
+logging
+asyncio
+typing
+dataclasses
+copy
+shutil
+time
